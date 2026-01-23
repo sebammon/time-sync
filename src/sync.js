@@ -16,7 +16,7 @@ const {
   CLOCKIFY_USER_ID,
 } = process.env;
 
-const CLOCKIFY_URL = `https://api.clockify.me/api/v1/workspaces/${CLOCKIFY_WORKSPACE_ID}/user/${CLOCKIFY_USER_ID}/time-entries`;
+const CLOCKIFY_URL = `https://api.clockify.me/api/v1`;
 const YOUTRACK_BASE_URL = "https://issues.yournextagency.com/api";
 
 // --- API CALLS ---
@@ -35,11 +35,39 @@ const clockifyApi = axios.create({
 });
 
 async function getBillableEntries(dateRange = {}) {
-  const { data } = await clockifyApi.get("", {
-    params: { ...dateRange, hydrated: true },
-  });
+  const { data } = await clockifyApi.get(
+    `/workspaces/${CLOCKIFY_WORKSPACE_ID}/user/${CLOCKIFY_USER_ID}/time-entries`,
+    {
+      params: { ...dateRange, hydrated: true },
+    },
+  );
 
   return (data || []).filter((entry) => entry.billable);
+}
+
+async function getWorkspaceProjects() {
+  const { data } = await clockifyApi.get(
+    `/workspaces/${CLOCKIFY_WORKSPACE_ID}/projects`,
+  );
+  return data;
+}
+
+async function getActiveProjectTasks(projectId) {
+  const { data } = await clockifyApi.get(
+    `/workspaces/${CLOCKIFY_WORKSPACE_ID}/projects/${projectId}/tasks`,
+    { params: { ["is-active"]: true } },
+  );
+
+  return data;
+}
+
+async function updateProjectTask(projectId, taskId, body) {
+  const { data } = await clockifyApi.put(
+    `/workspaces/${CLOCKIFY_WORKSPACE_ID}/projects/${projectId}/tasks/${taskId}`,
+    body,
+  );
+
+  return data;
 }
 
 async function getIssueWorkItems(issueId) {
@@ -58,6 +86,12 @@ async function getIssueWorkItems(issueId) {
   }
 
   return items;
+}
+
+async function getIssue(issueId) {
+  const { data } = await youTrackApi.get(`/issues/${issueId}?fields=resolved`);
+
+  return data;
 }
 
 async function postIssueWorkItem(
@@ -105,7 +139,7 @@ function extractIssueId(text) {
   return match ? match[1] : null;
 }
 
-function extractInternalId(text) {
+function extractTimeEntryId(text) {
   const match = text.trim().match(/\[([a-z\d]{24})]/);
 
   return match ? match[1] : null;
@@ -180,8 +214,9 @@ async function syncEntries(now, options) {
     await Promise.all(
       uniqueIssueIds.map(async (issueId) => {
         const issueWorkItems = await getIssueWorkItems(issueId);
+
         const workItemInternalIds = issueWorkItems
-          .map((item) => extractInternalId(item.text || ""))
+          .map((item) => extractTimeEntryId(item.text || ""))
           .filter(Boolean);
 
         return [issueId, new Set(workItemInternalIds)];
@@ -239,9 +274,46 @@ async function main() {
       parseInt,
     )
     .option("--dry-run", "Print what would be synced without posting anything")
+    .option("--clean-up", "Move all completed tasks into completed")
     .parse();
 
   const options = program.opts();
+
+  if (options.cleanUp) {
+    console.log("⚙️ Running in clean-up mode");
+
+    const workspaceProjects = await getWorkspaceProjects();
+
+    for (const project of workspaceProjects) {
+      const projectTasks = await getActiveProjectTasks(project.id);
+
+      for (const task of projectTasks) {
+        const issueId = extractIssueId(task.name || "");
+
+        if (!issueId) {
+          continue;
+        }
+
+        try {
+          const ytIssue = await getIssue(issueId);
+
+          if (!ytIssue.resolved) {
+            continue;
+          }
+
+          await updateProjectTask(project.id, task.id, {
+            ...task,
+            status: "DONE",
+          });
+        } catch (e) {
+          console.error(e);
+          // do nothing for now
+        }
+      }
+    }
+
+    return;
+  }
 
   if (options.dryRun) {
     console.log("⚙️ Running in dry-run mode");
