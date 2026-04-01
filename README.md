@@ -7,7 +7,7 @@ A CLI tool that syncs billable time entries from Clockify to YouTrack work items
 1. Install dependencies:
 
 ```sh
-npm install
+pnpm install
 ```
 
 2. Create a `.env` file in the project root with the following variables:
@@ -22,7 +22,7 @@ CLOCKIFY_USER_ID=<your-clockify-user-id>
 ## Usage
 
 ```sh
-npm start -- [options]
+pnpm start [options]
 ```
 
 ### Options
@@ -39,16 +39,36 @@ npm start -- [options]
 
 ```sh
 # Sync yesterday's entries (default)
-npm start
+pnpm start
 
 # Preview what would be synced today
-npm start -- --today --dry-run
+pnpm start --today --dry-run
 
 # Sync the last 7 days
-npm start -- --last-n-days 7
+pnpm start --last-n-days 7
 
 # Clean up completed tasks
-npm start -- --clean-up
+pnpm start --clean-up
+```
+
+## Installing as a global command
+
+To make `time-sync` available as a command anywhere on your system:
+
+```sh
+pnpm link --global
+```
+
+Then run it directly:
+
+```sh
+time-sync --today --dry-run
+```
+
+To uninstall the global link:
+
+```sh
+pnpm unlink --global time-sync
 ```
 
 ## How it works
